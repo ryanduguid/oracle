@@ -21,7 +21,10 @@ import {
   buildThinkingActivePredicateJsForTest,
   buildThinkingActivityDetailsPredicateJsForTest,
 } from "../../src/browser/actions/thinkingStatus.js";
-import { STOP_BUTTON_SELECTORS } from "../../src/browser/constants.js";
+import {
+  CONVERSATION_TURN_CONTAINER_SELECTOR,
+  STOP_BUTTON_SELECTORS,
+} from "../../src/browser/constants.js";
 
 // Completed-summary shapes the veto must treat as NOT active: bare, heading-prefixed
 // (the GPT-5.6 DOM renders "Reasoning Thought for 12s"), worded non-numeric durations,
@@ -345,7 +348,7 @@ describe("completion action correlation", () => {
       body: root,
       querySelector: (selector: string) => (selector === "main" ? root : null),
       querySelectorAll: (selector: string) => {
-        if (selector === '[data-testid^="conversation-turn"],[data-content-search-unit-key]') {
+        if (selector === CONVERSATION_TURN_CONTAINER_SELECTOR) {
           return [user, assistant];
         }
         if (selector.includes('key$=":user"')) return [user];
