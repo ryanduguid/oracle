@@ -4,6 +4,7 @@
 
 - Browser: count nested ChatGPT turn markers once, correlate keyed user turns with completed answers, and preserve existing macOS manual-login sessions while new profiles use the native Keychain.
 - Browser: warn when a configured Chrome executable cannot replace a running shared profile, explain how to switch safely, and share reuse handling with Project Sources; fixes #510, thanks @Sogl.
+- Browser: recognize ChatGPT's current model trigger and power slider, and verify GPT-6 Pro from the checked Latest radio plus the Pro slider state before sending.
 
 ## 0.21.3 - 2026-09-24
 
