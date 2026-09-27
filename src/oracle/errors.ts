@@ -1,5 +1,11 @@
-import { APIConnectionError, APIConnectionTimeoutError, APIUserAbortError } from "openai";
-import { APIError } from "openai/error";
+// "openai/error" holds the same classes as the package root without loading the whole client,
+// which every browser-only process would otherwise pay for through this module.
+import {
+  APIConnectionError,
+  APIConnectionTimeoutError,
+  APIError,
+  APIUserAbortError,
+} from "openai/error";
 import type { OracleResponse, OracleResponseMetadata, TransportFailureReason } from "./types.js";
 import { formatElapsed } from "./format.js";
 

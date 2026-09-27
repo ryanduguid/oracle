@@ -1,4 +1,4 @@
-import { APIConnectionError, APIConnectionTimeoutError } from "openai";
+import { APIConnectionError, APIConnectionTimeoutError } from "openai/error";
 import chalk from "chalk";
 import { formatElapsed } from "./format.js";
 import { startHeartbeat } from "../heartbeat.js";
