@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Browser/Remote: on Windows, run PowerShell, `taskkill` and `where` from System32 by absolute path, so an executable with the same name in the working directory (such as a project folder) never runs in their place.
 - Browser: add `browser.windowBounds` to place Oracle's own Chrome window (for example maximised on a second monitor) and, on Windows, `browser.keepWindowBehind` to keep it behind the windows it overlaps unless you click into it.
 - Browser: count nested ChatGPT turn markers once, correlate keyed user turns with completed answers, and preserve existing macOS manual-login sessions while new profiles use the native Keychain.
 - Browser: warn when a configured Chrome executable cannot replace a running shared profile, explain how to switch safely, and share reuse handling with Project Sources; fixes #510, thanks @Sogl.

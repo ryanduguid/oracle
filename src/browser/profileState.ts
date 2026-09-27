@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { windowsPowerShellExecutable, windowsSystemExecutable } from "../windowsSystem.js";
 import { delay } from "./utils.js";
 import { formatWebSocketHost } from "./detect.js";
 
@@ -142,7 +143,8 @@ export async function terminateRecordedChromeForProfile(
   }
   try {
     if (process.platform === "win32") {
-      await execFileAsync("taskkill.exe", ["/PID", String(pid), "/T", "/F"], {
+      const taskkill = windowsSystemExecutable("taskkill.exe");
+      await execFileAsync(taskkill, ["/PID", String(pid), "/T", "/F"], {
         maxBuffer: 1024 * 1024,
         windowsHide: true,
         timeout: 5000,
@@ -270,7 +272,7 @@ export async function readProcessStartTimeMs(pid: number): Promise<number | null
 
 async function queryProcessStartTimeMs(pid: number): Promise<number | null> {
   try {
-    const executable = process.platform === "win32" ? "powershell.exe" : "ps";
+    const executable = process.platform === "win32" ? windowsPowerShellExecutable() : "ps";
     const args =
       process.platform === "win32"
         ? [
@@ -550,7 +552,7 @@ async function isChromeUsingUserDataDir(userDataDir: string): Promise<boolean> {
 
 async function readProcessCommand(pid: number): Promise<string | null> {
   try {
-    const executable = process.platform === "win32" ? "powershell.exe" : "ps";
+    const executable = process.platform === "win32" ? windowsPowerShellExecutable() : "ps";
     const args =
       process.platform === "win32"
         ? [

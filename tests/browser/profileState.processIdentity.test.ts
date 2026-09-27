@@ -1,16 +1,85 @@
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { mkdtemp, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 
 const { query } = vi.hoisted(() => ({ query: vi.fn() }));
 vi.mock("node:child_process", () => ({
   execFile: Object.assign(vi.fn(), { [Symbol.for("nodejs.util.promisify.custom")]: query }),
 }));
 
+// Absolute System32 paths: a bare name would let the working directory supply the helper.
+const POWERSHELL = /^[A-Za-z]:[\\/].*System32[\\/]WindowsPowerShell[\\/]v1\.0[\\/]powershell\.exe$/;
+const TASKKILL = /^[A-Za-z]:[\\/].*System32[\\/]taskkill\.exe$/;
+const originalPlatform = process.platform;
+
 beforeEach(() => {
   vi.resetModules();
   query.mockReset();
 });
 
-afterEach(() => vi.unstubAllEnvs());
+afterEach(() => {
+  vi.unstubAllEnvs();
+  Object.defineProperty(process, "platform", { value: originalPlatform });
+});
+
+test("probes a Windows process identity with PowerShell by absolute path", async () => {
+  Object.defineProperty(process, "platform", { value: "win32" });
+  query.mockResolvedValue({ stdout: "2026-09-11T12:00:00.000Z" });
+  const { readProcessStartTimeMs } = await import("../../src/browser/profileState.js");
+
+  await expect(readProcessStartTimeMs(process.pid + 1)).resolves.toBe(
+    Date.parse("2026-09-11T12:00:00.000Z"),
+  );
+  // Compare only the executable and arguments: the options carry a copy of process.env.
+  const [executable, args] = query.mock.calls[0]!;
+  expect(executable).toMatch(POWERSHELL);
+  expect(args).toEqual(
+    expect.arrayContaining(["-NoProfile", "-Command", expect.stringContaining("Get-Process")]),
+  );
+});
+
+test("checks and terminates recorded Windows Chrome with System32 helpers", async () => {
+  Object.defineProperty(process, "platform", { value: "win32" });
+  const userDataDir = await mkdtemp(path.join(os.tmpdir(), "oracle-profile-state-"));
+  const pid = 424_242;
+  let alive = true;
+  const kill = vi.spyOn(process, "kill").mockImplementation(() => {
+    if (alive) return true;
+    throw Object.assign(new Error("kill ESRCH"), { code: "ESRCH" });
+  });
+  query.mockImplementation(async (executable: string) => {
+    if (TASKKILL.test(executable)) {
+      alive = false;
+      return { stdout: "" };
+    }
+    return {
+      stdout: `"C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe" --user-data-dir="${userDataDir}"`,
+    };
+  });
+  try {
+    const { terminateRecordedChromeForProfile, writeChromePid } =
+      await import("../../src/browser/profileState.js");
+    await writeChromePid(userDataDir, pid);
+
+    await expect(terminateRecordedChromeForProfile(userDataDir)).resolves.toBe(true);
+    expect(query).toHaveBeenNthCalledWith(
+      1,
+      expect.stringMatching(POWERSHELL),
+      expect.arrayContaining(["-Command", expect.stringContaining("Win32_Process")]),
+      expect.objectContaining({ windowsHide: true }),
+    );
+    expect(query).toHaveBeenNthCalledWith(
+      2,
+      expect.stringMatching(TASKKILL),
+      ["/PID", String(pid), "/T", "/F"],
+      expect.objectContaining({ windowsHide: true }),
+    );
+  } finally {
+    kill.mockRestore();
+    await rm(userDataDir, { recursive: true, force: true });
+  }
+});
 
 test("retries a failed self-identity probe and caches only the successful result", async () => {
   query.mockRejectedValueOnce(new Error("PowerShell timed out"));

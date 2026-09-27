@@ -4,6 +4,7 @@ import { access, mkdir, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { getOracleHomeDir } from "../oracleHome.js";
+import { windowsPowerShellExecutable } from "../windowsSystem.js";
 import type { BrowserLogger } from "./types.js";
 
 // Runs until Chrome exits. Every 500 ms it moves each visible Chrome root window just below the
@@ -157,14 +158,9 @@ export async function startChromeWindowKeeper(
         if (!(await exists(scriptPath))) throw error;
       });
     }
-    // An absolute path, because Windows searches the working directory (the user's project)
-    // before PATH. The script relaunches itself hidden and prints the keeper's pid once ready.
-    const powershell = path.join(
-      process.env.SystemRoot ?? "C:/Windows",
-      "System32/WindowsPowerShell/v1.0/powershell.exe",
-    );
+    // The script relaunches itself hidden and prints the keeper's pid once ready.
     const { stdout } = await promisify(execFile)(
-      powershell,
+      windowsPowerShellExecutable(),
       [
         "-NoProfile",
         "-NonInteractive",

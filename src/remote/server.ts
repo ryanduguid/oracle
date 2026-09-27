@@ -30,6 +30,7 @@ import { getCookies, type Cookie } from "@steipete/sweet-cookie";
 import { CHATGPT_URL } from "../browser/constants.js";
 import { getCliVersion } from "../version.js";
 import { getOracleHomeDir } from "../oracleHome.js";
+import { windowsSystemExecutable } from "../windowsSystem.js";
 import { resolveBrowserProvider, resolveRemoteBrowserModel } from "../browser/provider.js";
 import {
   cleanupStaleProfileState,
@@ -1319,7 +1320,7 @@ function canSpawn(cmd: string): boolean {
   try {
     if (process.platform === "win32") {
       // `where` returns non-zero when the command is not found.
-      const result = spawnSync("where", [cmd], { stdio: "ignore" });
+      const result = spawnSync(windowsSystemExecutable("where.exe"), [cmd], { stdio: "ignore" });
       return result.status === 0;
     }
     // `command -v` is a shell builtin; run through sh. Fallback to `which`.
@@ -1331,6 +1332,8 @@ function canSpawn(cmd: string): boolean {
     return false;
   }
 }
+
+export const canSpawnForTest = canSpawn;
 
 async function launchManualLoginChrome(
   profileDir: string,
