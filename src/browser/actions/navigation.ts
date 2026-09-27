@@ -4,6 +4,7 @@ import {
   CLOUDFLARE_TITLE,
   CONVERSATION_TURN_SELECTOR,
   INPUT_SELECTORS,
+  SIDEBAR_CONVERSATION_LINK_SELECTOR,
 } from "../constants.js";
 import { delay } from "../utils.js";
 import { logDomFailure } from "../domDebug.js";
@@ -211,14 +212,24 @@ function buildChatModeProbeExpression(): string {
       !node.hasAttribute('dir') &&
       node.classList.contains('shrink-0') &&
       node.parentElement?.matches('span.flex.items-center');
+    // September 2026 rows keep the title in [data-thread-title], so any other leaf reading
+    // "Work" in the row is a mode label, whatever its classes.
+    const hasWorkLabelOutsideTitle = (link) => {
+      const title = link.querySelector?.('[data-thread-title]');
+      if (!title) return false;
+      return Array.from(link.querySelectorAll('*')).some(
+        (node) =>
+          node.childElementCount === 0 && normalize(node.textContent) === 'work' && !title.contains(node),
+      );
+    };
 
     const pathname = typeof location?.pathname === 'string' ? location.pathname : '';
     const conversationId = conversationIdFromPath(pathname);
     if (conversationId) {
       // Conversation messages can contain same-origin links to the current thread. Only sidebar
-      // history items use ChatGPT's renderer-owned menu-item anchor class.
+      // history rows count; messages never render inside the sidebar nav.
       const activeHistoryLinks = Array.from(
-        document.querySelectorAll('a.__menu-item[href*="/c/"]'),
+        document.querySelectorAll('${SIDEBAR_CONVERSATION_LINK_SELECTOR}'),
       ).filter((node) => {
         try {
           const candidateUrl = new URL(node.getAttribute('href') || '', location.origin);
@@ -228,8 +239,10 @@ function buildChatModeProbeExpression(): string {
         }
       });
       if (activeHistoryLinks.length > 0) {
-        const hasWorkBadge = activeHistoryLinks.some((link) =>
-          Array.from(link.querySelectorAll('span')).some(isStructuredWorkBadge),
+        const hasWorkBadge = activeHistoryLinks.some(
+          (link) =>
+            Array.from(link.querySelectorAll('span')).some(isStructuredWorkBadge) ||
+            hasWorkLabelOutsideTitle(link),
         );
         if (hasWorkBadge) return { status: 'work-conversation' };
 

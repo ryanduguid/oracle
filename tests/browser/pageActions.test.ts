@@ -20,6 +20,7 @@ import {
   buildWelcomeBackAccountPickerExpressionForTest,
   buildChatModeProbeExpressionForTest,
 } from "../../src/browser/actions/navigation.js";
+import { SIDEBAR_CONVERSATION_LINK_SELECTOR } from "../../src/browser/constants.js";
 import * as attachments from "../../src/browser/actions/attachments.js";
 import * as attachmentDataTransfer from "../../src/browser/actions/attachmentDataTransfer.js";
 import type { ChromeClient } from "../../src/browser/types.js";
@@ -234,23 +235,46 @@ describe("ensureChatMode", () => {
       ariaLabel?: string;
       descendants?: FakeChatModeElement[];
       trustedHistory?: boolean;
+      // September 2026 row: the title sits in [data-thread-title]; other leaves are row labels.
+      threadRow?: { title: string; otherLeaves?: string[] };
     }>,
   ) => {
     const expression = buildChatModeProbeExpressionForTest();
     const historyLinks = links.map(
-      ({ href, ariaLabel = "", descendants = [], trustedHistory = true }) => ({
-        trustedHistory,
-        getAttribute: (name: string) => {
-          if (name === "href") return href;
-          if (name === "aria-label") return ariaLabel;
-          return null;
-        },
-        querySelectorAll: (selector: string) => (selector === "span" ? descendants : []),
-      }),
+      ({ href, ariaLabel = "", descendants = [], trustedHistory = true, threadRow }) => {
+        const titleLeaf = threadRow && { childElementCount: 0, textContent: threadRow.title };
+        const title = threadRow && {
+          childElementCount: 1,
+          textContent: threadRow.title,
+          contains: (node: unknown) => node === titleLeaf,
+        };
+        const rowNodes = threadRow
+          ? [
+              title,
+              titleLeaf,
+              ...(threadRow.otherLeaves ?? []).map((text) => ({
+                childElementCount: 0,
+                textContent: text,
+              })),
+            ]
+          : [];
+        return {
+          trustedHistory,
+          getAttribute: (name: string) => {
+            if (name === "href") return href;
+            if (name === "aria-label") return ariaLabel;
+            return null;
+          },
+          querySelector: (selector: string) =>
+            selector === "[data-thread-title]" ? (title ?? null) : null,
+          querySelectorAll: (selector: string) =>
+            selector === "span" ? descendants : selector === "*" ? rowNodes : [],
+        };
+      },
     );
     const document = {
       querySelectorAll: (selector: string) =>
-        selector === 'a.__menu-item[href*="/c/"]'
+        selector === SIDEBAR_CONVERSATION_LINK_SELECTOR
           ? historyLinks.filter((link) => link.trustedHistory)
           : [],
     };
@@ -458,6 +482,29 @@ describe("ensureChatMode", () => {
     ).toEqual({ status: "chat-conversation" });
   });
 
+  test.each([
+    ["an ordinary title", "Release review", []],
+    ["a title that is exactly Work", "Work", []],
+  ])("recognizes a September 2026 row with %s as Chat", (_caseName, title, otherLeaves) => {
+    expect(
+      runConversationModeProbe("/c/row-thread", [
+        { href: "/c/row-thread", ariaLabel: title, threadRow: { title, otherLeaves } },
+      ]),
+    ).toEqual({ status: "chat-conversation" });
+  });
+
+  test("fails closed on a Work label beside a September 2026 thread title", () => {
+    expect(
+      runConversationModeProbe("/c/row-thread", [
+        {
+          href: "/c/row-thread",
+          ariaLabel: "Release review",
+          threadRow: { title: "Release review", otherLeaves: ["Work"] },
+        },
+      ]),
+    ).toEqual({ status: "work-conversation" });
+  });
+
   test("treats a terminal aria Work suffix as hydration evidence rather than authority", () => {
     expect(
       runConversationModeProbe("/c/pending-thread", [
@@ -590,7 +637,7 @@ describe("ensureChatMode", () => {
     expect(expression).toContain('button[role="radio"]');
     expect(expression).toContain("normalize(node.textContent) === 'chat'");
     expect(expression).toContain("normalize(node.textContent) === 'work'");
-    expect(expression).toContain('a.__menu-item[href*="/c/"]');
+    expect(expression).toContain(SIDEBAR_CONVERSATION_LINK_SELECTOR);
     expect(expression).toContain("candidateUrl.origin === location.origin");
     expect(expression).toContain(
       "conversationIdFromPath(candidateUrl.pathname) === conversationId",

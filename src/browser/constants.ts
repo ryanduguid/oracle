@@ -42,6 +42,9 @@ export const CONVERSATION_TURN_CONTAINER_SELECTOR =
   '[data-testid^="conversation-turn"], [data-turn-key], [data-content-search-unit-key]';
 export const ASSISTANT_ROLE_SELECTOR =
   '[data-message-author-role="assistant"], [data-turn="assistant"], [data-chatgpt-search-unit-key$=":assistant"]';
+// Sidebar history rows. Older layouts mark them with the renderer-owned `__menu-item` class; the
+// September 2026 layout drops it and renders each row as a link inside the sidebar `nav`.
+export const SIDEBAR_CONVERSATION_LINK_SELECTOR = 'a.__menu-item[href*="/c/"], nav a[href*="/c/"]';
 export const CLOUDFLARE_SCRIPT_SELECTOR = 'script[src*="/challenge-platform/"]';
 export const CLOUDFLARE_TITLE = "just a moment";
 export const PROMPT_PRIMARY_SELECTOR = "#prompt-textarea";
