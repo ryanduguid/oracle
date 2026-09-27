@@ -162,6 +162,41 @@ describe("archiveChatGptConversation", () => {
     expect(point).toBeNull();
   });
 
+  test("uses the sidebar row when the page also links the current chat elsewhere", () => {
+    class FakeElement {
+      getBoundingClientRect() {
+        return { left: 40, top: 20, width: 20, height: 20 };
+      }
+      scrollIntoView() {}
+    }
+    const actionsButton = new FakeElement();
+    const pageLink = { getAttribute: () => "/c/current", closest: () => null };
+    const sidebarLink = {
+      getAttribute: () => "/c/current",
+      closest: (selector: string) => (selector === "div.group[aria-label]" ? row : null),
+    };
+    const row = {
+      querySelectorAll: () => [sidebarLink],
+      querySelector: (selector: string) =>
+        selector === 'button[aria-label="Chat actions"]' ? actionsButton : null,
+    };
+    const document = {
+      querySelectorAll: (selector: string) =>
+        selector === "a[href]" ? [pageLink, sidebarLink] : [],
+    };
+    const expression = buildTrustedArchiveMenuPointExpressionForTest(
+      "https://chatgpt.com/c/current",
+    );
+    const point = Function(
+      "document",
+      "location",
+      "HTMLElement",
+      "URL",
+      `return ${expression};`,
+    )(document, { href: "https://chatgpt.com/c/current" }, FakeElement, URL);
+    expect(point).toEqual({ x: 50, y: 30 });
+  });
+
   test("returns archived result when the DOM action succeeds", async () => {
     const runtime = {
       evaluate: vi.fn().mockResolvedValue({

@@ -151,12 +151,14 @@ export function buildTrustedArchiveMenuPointExpressionForTest(
   const conversationLiteral = JSON.stringify(conversationUrl ?? "");
   return `(() => {
     const current = new URL(${conversationLiteral} || location.href, location.href);
-    const link = Array.from(document.querySelectorAll('a[href]')).find((element) => {
+    const links = Array.from(document.querySelectorAll('a[href]')).filter((element) => {
       try {
         const url = new URL(element.getAttribute('href') ?? '', location.href);
         return url.origin === current.origin && url.pathname === current.pathname;
       } catch { return false; }
     });
+    // The page can also link the current chat outside the sidebar; the menu is on the sidebar row.
+    const link = links.find((element) => element.closest('div.group[aria-label]')) ?? links[0];
     const row = link?.closest('div.group[aria-label]');
     if (link && (!row || row.querySelectorAll('a[href*="/c/"]').length !== 1)) return null;
     let button = row?.querySelector('button[aria-label="Chat actions"]') ?? null;
@@ -441,8 +443,8 @@ function buildArchiveConversationExpression(): string {
 	      element.dispatchEvent(new MouseEvent('click', { ...eventInit, buttons: 0 }));
 	    };
     const currentUrl = new URL(conversationUrl ?? location.href, location.href);
-    const findCurrentConversationLink = () =>
-      Array.from(document.querySelectorAll('a[href]')).find((element) => {
+    const findCurrentConversationLink = () => {
+      const links = Array.from(document.querySelectorAll('a[href]')).filter((element) => {
         try {
           const url = new URL(element.getAttribute('href') ?? '', location.href);
           return url.origin === currentUrl.origin && url.pathname === currentUrl.pathname;
@@ -450,6 +452,9 @@ function buildArchiveConversationExpression(): string {
           return false;
         }
       });
+      // Prefer the sidebar row's link; the page can also link the current chat elsewhere.
+      return links.find((element) => element.closest('div.group[aria-label]')) ?? links[0];
+    };
     let sidebarConversationLinkFound = false;
     const findConversationMenuButton = () => {
 	      // Recent ChatGPT layouts put Archive in the current chat's sidebar menu,
