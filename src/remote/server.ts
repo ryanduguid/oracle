@@ -30,7 +30,6 @@ import { getCookies, type Cookie } from "@steipete/sweet-cookie";
 import { CHATGPT_URL } from "../browser/constants.js";
 import { getCliVersion } from "../version.js";
 import { getOracleHomeDir } from "../oracleHome.js";
-import { windowsSystemExecutable } from "../windowsSystem.js";
 import { resolveBrowserProvider, resolveRemoteBrowserModel } from "../browser/provider.js";
 import {
   cleanupStaleProfileState,
@@ -1254,13 +1253,13 @@ function toCdpCookie(cookie: Cookie): CookieParam | null {
 }
 
 function triggerLocalLoginPrompt(logger: (message: string) => void, url: string): boolean {
+  // Serve always uses the manual-login profile on Windows, so it never opens a browser there.
+  if (process.platform === "win32") return false;
   const verbose = process.argv.includes("--verbose") || process.env.ORACLE_SERVE_VERBOSE === "1";
   const openers: Array<{ cmd: string; args?: string[] }> = [];
 
   if (process.platform === "darwin") {
     openers.push({ cmd: "open" });
-  } else if (process.platform === "win32") {
-    openers.push({ cmd: "start" });
   } else {
     if (isWsl()) {
       // Prefer wslview when available, then fall back to Windows start.exe to open in the host browser.
@@ -1318,11 +1317,6 @@ function isWsl(): boolean {
 function canSpawn(cmd: string): boolean {
   if (!cmd) return false;
   try {
-    if (process.platform === "win32") {
-      // `where` returns non-zero when the command is not found.
-      const result = spawnSync(windowsSystemExecutable("where.exe"), [cmd], { stdio: "ignore" });
-      return result.status === 0;
-    }
     // `command -v` is a shell builtin; run through sh. Fallback to `which`.
     const shResult = spawnSync("sh", ["-c", `command -v ${cmd}`], { stdio: "ignore" });
     if (shResult.status === 0) return true;
@@ -1332,8 +1326,6 @@ function canSpawn(cmd: string): boolean {
     return false;
   }
 }
-
-export const canSpawnForTest = canSpawn;
 
 async function launchManualLoginChrome(
   profileDir: string,

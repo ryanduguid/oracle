@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { cp, mkdir, readFile, rm } from "node:fs/promises";
 import path from "node:path";
+import { pathToolExecutable } from "../windowsSystem.js";
 
 /**
  * Cache/derived subdirectories that bloat the copy and carry no signed-in-session
@@ -64,8 +65,12 @@ export async function copyChromeProfile(
       args.push("--exclude", exclude);
     }
     args.push(`${srcProfile}/`, `${destProfile}/`);
+    const rsync = pathToolExecutable("rsync");
+    if (!rsync) {
+      throw new Error("--copy-profile requires rsync on PATH");
+    }
     await new Promise<void>((resolve, reject) => {
-      const child = spawn("rsync", args, { stdio: "ignore" });
+      const child = spawn(rsync, args, { stdio: "ignore" });
       child.on("error", (err) =>
         reject(
           new Error(

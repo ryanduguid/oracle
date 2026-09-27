@@ -11,6 +11,7 @@ import {
 } from "../../bridge/connection.js";
 import type { BridgeConnectionArtifact } from "../../bridge/connection.js";
 import { serveRemote } from "../../remote/server.js";
+import { pathToolExecutable } from "../../windowsSystem.js";
 
 export interface BridgeHostCliOptions {
   bind?: string;
@@ -223,6 +224,10 @@ function startReverseTunnel({
   extraArgs?: string;
   log: (message: string) => void;
 }): ReverseTunnelHandle {
+  const ssh = pathToolExecutable("ssh");
+  if (!ssh) {
+    throw new Error("--ssh requires ssh on PATH");
+  }
   let stopped = false;
   let child: ChildProcess | null = null;
   let attempt = 0;
@@ -249,7 +254,7 @@ function startReverseTunnel({
     }
     args.push(sshTarget);
 
-    child = spawn("ssh", args, { stdio: "ignore" });
+    child = spawn(ssh, args, { stdio: "ignore" });
     const pid = child.pid;
     log(`[bridge host] ssh tunnel started${pid ? ` (pid ${pid})` : ""}: ${sshTarget}`);
 
@@ -282,6 +287,8 @@ function startReverseTunnel({
     },
   };
 }
+
+export const startReverseTunnelForTest = startReverseTunnel;
 
 function splitArgs(input: string): string[] {
   const args: string[] = [];
