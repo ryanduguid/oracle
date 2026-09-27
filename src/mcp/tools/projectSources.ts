@@ -2,13 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { loadUserConfig } from "../../config.js";
 import { resolveRemoteServiceConfig } from "../../remote/remoteServiceConfig.js";
-import { runBrowserProjectSources } from "../../browser/projectSourcesRunner.js";
 import { normalizeProjectSourcesUrl } from "../../projectSources/url.js";
-import {
-  buildProjectSourcesBrowserConfig,
-  resolveProjectSourceFiles,
-} from "../../cli/projectSources.js";
-import { resolveConfiguredMaxFileSizeBytes } from "../../cli/fileSize.js";
 
 const projectSourceEntryShape = z.object({
   name: z.string(),
@@ -108,6 +102,16 @@ export function registerProjectSourcesTool(server: McpServer): void {
           ),
         };
       }
+      // Loaded on first use so an idle MCP server does not hold the browser stack.
+      const [
+        { runBrowserProjectSources },
+        { buildProjectSourcesBrowserConfig, resolveProjectSourceFiles },
+        { resolveConfiguredMaxFileSizeBytes },
+      ] = await Promise.all([
+        import("../../browser/projectSourcesRunner.js"),
+        import("../../cli/projectSources.js"),
+        import("../../cli/fileSize.js"),
+      ]);
       const maxFileSizeBytes = resolveConfiguredMaxFileSizeBytes(userConfig, process.env);
       const files =
         parsed.operation === "add"

@@ -1,13 +1,12 @@
 import type { McpServer, CallToolResult, ServerContext } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { getCliVersion } from "../../version.js";
-import { ensureBrowserAvailable, mapConsultToRunOptions } from "../utils.js";
 import type { RunOracleOptions } from "../../oracle.js";
+import type { mapConsultToRunOptions } from "../utils.js";
 import type { EngineMode } from "../../cli/engine.js";
 import type { BrowserSessionConfig, SessionArtifact, SessionModelRun } from "../../sessionStore.js";
 import { sessionStore } from "../../sessionStore.js";
 import { resolveRemoteServiceConfig } from "../../remote/remoteServiceConfig.js";
-import { createRemoteBrowserExecutor } from "../../remote/client.js";
 import type { BrowserSessionRunnerDeps } from "../../browser/sessionRunner.js";
 
 export async function readSessionLogTail(
@@ -24,8 +23,6 @@ export async function readSessionLogTail(
     return null;
   }
 }
-import { performSessionRun } from "../../cli/sessionRunner.js";
-import { runDryRunSummary } from "../../cli/dryRun.js";
 import { CHATGPT_URL } from "../../browser/constants.js";
 import { CONSULT_PRESETS, browserThinkingTimeRawSchema, consultInputSchema } from "../types.js";
 import { applyConsultPreset } from "../consultPresets.js";
@@ -558,6 +555,18 @@ export async function runConsultTool(
     dryRun,
     slug,
   } = parsedInput;
+  // The run stack pulls in the API clients and Chrome launcher; an idle MCP server never needs them.
+  const [
+    { ensureBrowserAvailable, mapConsultToRunOptions },
+    { createRemoteBrowserExecutor },
+    { performSessionRun },
+    { runDryRunSummary },
+  ] = await Promise.all([
+    import("../utils.js"),
+    import("../../remote/client.js"),
+    import("../../cli/sessionRunner.js"),
+    import("../../cli/dryRun.js"),
+  ]);
   const { config: userConfig } = await loadUserConfig();
   let runOptions: RunOracleOptions;
   let resolvedEngine: EngineMode;
