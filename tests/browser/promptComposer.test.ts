@@ -345,6 +345,71 @@ describe("promptComposer", () => {
     },
   );
 
+  describe("fresh chat that has opened a conversation", () => {
+    const unrendered = {
+      baseline: 0,
+      turnsCount: 0,
+      userMatched: false,
+      prefixMatched: false,
+      lastMatched: false,
+      hasNewTurn: false,
+      stopVisible: false,
+      assistantVisible: false,
+      composerCleared: false,
+      inConversation: true,
+      editorValue: "",
+      lastTurn: "",
+    };
+
+    test("waits one more window for the accepted prompt to render", async () => {
+      vi.useFakeTimers();
+      try {
+        const rendered = { ...unrendered, turnsCount: 1, userMatched: true, hasNewTurn: true };
+        const log = vi.fn();
+        // The baseline read has no prompt probe in it; the turn renders only after the extension.
+        const runtime = {
+          evaluate: vi.fn(async ({ expression }: { expression: string }) => ({
+            result: {
+              value: !expression.includes("normalizedPrompt")
+                ? 0
+                : log.mock.calls.length > 0
+                  ? rendered
+                  : unrendered,
+            },
+          })),
+        };
+
+        const promise = promptComposer.verifyPromptCommitted(runtime as never, "hello", 150, log);
+        await vi.advanceTimersByTimeAsync(400);
+
+        await expect(promise).resolves.toBe(1);
+        expect(log).toHaveBeenCalledWith(
+          "Prompt accepted (conversation opened) but not rendered yet; waiting longer.",
+        );
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    test("still fails after the extra window when nothing renders", async () => {
+      vi.useFakeTimers();
+      try {
+        const runtime = {
+          evaluate: vi
+            .fn()
+            .mockResolvedValueOnce({ result: { value: 0 } })
+            .mockResolvedValue({ result: { value: unrendered } }),
+        };
+        const promise = promptComposer.verifyPromptCommitted(runtime as never, "hello", 150);
+        const assertion = expect(promise).rejects.toThrow(/prompt did not appear/i);
+        await vi.advanceTimersByTimeAsync(400);
+        await assertion;
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
+
   test("allows prompt match even if baseline turn count cannot be read", async () => {
     const runtime = {
       evaluate: vi

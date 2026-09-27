@@ -1092,7 +1092,7 @@ async function verifyPromptCommitted(
   logger?: BrowserLogger,
   baselineTurns?: number,
 ): Promise<number | null> {
-  const deadline = Date.now() + timeoutMs;
+  let deadline = Date.now() + timeoutMs;
   const encodedPrompt = JSON.stringify(prompt.trim());
   const primarySelectorLiteral = JSON.stringify(PROMPT_PRIMARY_SELECTOR);
   const fallbackSelectorLiteral = JSON.stringify(PROMPT_FALLBACK_SELECTOR);
@@ -1194,27 +1194,34 @@ async function verifyPromptCommitted(
   })()`;
 
   let lastProbe: CommitProbeState | undefined;
-  while (Date.now() < deadline) {
-    const { result } = await Runtime.evaluate({ expression: script, returnByValue: true });
-    const info = result.value as CommitProbeState | undefined;
-    if (info && typeof info === "object") {
-      lastProbe = info;
+  for (let extended = false; ; extended = true) {
+    while (Date.now() < deadline) {
+      const { result } = await Runtime.evaluate({ expression: script, returnByValue: true });
+      const info = result.value as CommitProbeState | undefined;
+      if (info && typeof info === "object") {
+        lastProbe = info;
+      }
+      const turnsCount = (result.value as { turnsCount?: number } | undefined)?.turnsCount;
+      const matchesPrompt = Boolean(info?.lastMatched || info?.userMatched || info?.prefixMatched);
+      const baselineUnknown =
+        typeof info?.baseline === "number" ? info.baseline < 0 : baselineLiteral < 0;
+      if (matchesPrompt && (baselineUnknown || info?.hasNewTurn)) {
+        return typeof turnsCount === "number" && Number.isFinite(turnsCount) ? turnsCount : null;
+      }
+      const fallbackCommit =
+        info?.composerCleared &&
+        Boolean(info?.hasNewTurn) &&
+        ((info?.stopVisible ?? false) || info?.assistantVisible || info?.inConversation);
+      if (fallbackCommit) {
+        return typeof turnsCount === "number" && Number.isFinite(turnsCount) ? turnsCount : null;
+      }
+      await delay(100);
     }
-    const turnsCount = (result.value as { turnsCount?: number } | undefined)?.turnsCount;
-    const matchesPrompt = Boolean(info?.lastMatched || info?.userMatched || info?.prefixMatched);
-    const baselineUnknown =
-      typeof info?.baseline === "number" ? info.baseline < 0 : baselineLiteral < 0;
-    if (matchesPrompt && (baselineUnknown || info?.hasNewTurn)) {
-      return typeof turnsCount === "number" && Number.isFinite(turnsCount) ? turnsCount : null;
-    }
-    const fallbackCommit =
-      info?.composerCleared &&
-      Boolean(info?.hasNewTurn) &&
-      ((info?.stopVisible ?? false) || info?.assistantVisible || info?.inConversation);
-    if (fallbackCommit) {
-      return typeof turnsCount === "number" && Number.isFinite(turnsCount) ? turnsCount : null;
-    }
-    await delay(100);
+    // A fresh chat only moves to a /c/ URL once ChatGPT accepts the prompt. On a busy machine the
+    // turn can render late, and giving up here abandons an answer that is already being written.
+    if (extended || baseline !== 0 || !lastProbe?.inConversation) break;
+    logger?.("Prompt accepted (conversation opened) but not rendered yet; waiting longer.");
+    deadline = Date.now() + timeoutMs;
   }
   const finalProbe = await Runtime.evaluate({ expression: script, returnByValue: true })
     .then((res) => res?.result?.value as CommitProbeState | undefined)

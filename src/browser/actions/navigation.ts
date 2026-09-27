@@ -677,7 +677,8 @@ export async function waitForResumedConversationHydration(
   deps: ResumedConversationHydrationDeps = {},
 ): Promise<number> {
   const ensureReady = deps.ensurePromptReady ?? ensurePromptReady;
-  const hydrationDeadline = Date.now() + Math.min(timeoutMs || 30_000, 30_000);
+  // Polls until the turns settle; a busy machine has needed more than 30s to render a resumed thread.
+  const hydrationDeadline = Date.now() + Math.min(timeoutMs || 60_000, 60_000);
   let priorTurns = 0;
   let stableChecks = 0;
   let settled = false;
