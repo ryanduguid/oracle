@@ -3,12 +3,20 @@ import os from "node:os";
 import path from "node:path";
 import { BrowserAutomationError } from "../oracle/errors.js";
 
+/**
+ * Non-interactive runs still need time for ChatGPT to hydrate: with three tabs
+ * loading at once on a busy PC the session probe took longer than the old 30 s
+ * cap and a signed-in profile was reported as signed out (27 September 2026).
+ * A genuinely signed-out profile now costs two minutes before the setup hint.
+ */
+export const NON_INTERACTIVE_MANUAL_LOGIN_WAIT_MS = 120_000;
+
 export function resolveManualLoginWaitMs(timeoutMs: number | undefined, keepBrowser: boolean) {
   const configured = Math.min(timeoutMs ?? 1_200_000, 20 * 60_000);
   if (keepBrowser) {
     return configured;
   }
-  return Math.min(configured, 30_000);
+  return Math.min(configured, NON_INTERACTIVE_MANUAL_LOGIN_WAIT_MS);
 }
 
 export async function assertManualLoginProfileReadyForRun({

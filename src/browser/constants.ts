@@ -101,6 +101,19 @@ export const COMPOSER_MODEL_SIGNAL_SELECTOR = '[data-testid="composer-footer-act
 // labelled "Copy" and sits outside the message content, so a code block's copy button never matches.
 export const COPY_BUTTON_SELECTOR =
   'button[data-testid="copy-turn-action-button"], [data-turn-key] button[aria-label="Copy"]:not([data-content-search-unit-key] button)';
+// The composer "+" (tools) button. September 2026 dropped its id and test id; the
+// button now carries only an English aria-label inside the composer form.
+export const COMPOSER_PLUS_SELECTORS = [
+  "#composer-plus-btn",
+  'button[data-testid="composer-plus-btn"]',
+  'form button[aria-label="Add files and more"]',
+] as const;
+export const COMPOSER_PLUS_SELECTOR = COMPOSER_PLUS_SELECTORS.join(", ");
+// The tools menu the "+" button opens in the September 2026 layout: a fixed
+// container without menu roles whose entries are plain buttons.
+export const COMPOSER_TOOLS_MENU_SELECTOR = '[class*="ComposerTopMenuShell"]';
+// Web Search, once selected, shows as a removable chip in the composer form.
+export const WEB_SEARCH_ACTIVE_CHIP_SELECTOR = 'form button[aria-label="Remove Web search"]';
 // Action buttons that only appear once a turn has finished rendering.
 export const DEEP_RESEARCH_PLUS_BUTTON = '[data-testid="composer-plus-btn"]';
 export const DEEP_RESEARCH_DROPDOWN_ITEM_TEXT = "Deep research";

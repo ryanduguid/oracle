@@ -4,6 +4,7 @@ import {
   DEEP_RESEARCH_DROPDOWN_ITEM_TEXT,
   DEEP_RESEARCH_PILL_LABEL,
   DEEP_RESEARCH_POLL_INTERVAL_MS,
+  COMPOSER_TOOLS_MENU_SELECTOR,
   DEEP_RESEARCH_AUTO_CONFIRM_WAIT_MS,
   DEEP_RESEARCH_DEFAULT_TIMEOUT_MS,
   FINISHED_ACTIONS_SELECTOR,
@@ -1375,6 +1376,7 @@ function buildActivateDeepResearchExpression(): string {
       '[class*="popover"]',
       '[data-radix-popper-content-wrapper]',
       '[data-floating-ui-portal]',
+      '${COMPOSER_TOOLS_MENU_SELECTOR}',
     ].join(',');
     const normalizeText = (value) => String(value || '').replace(/\\s+/g, ' ').trim().toLowerCase();
     const compactText = (value) => normalizeText(value).replace(/\\s+/g, '');

@@ -10,6 +10,7 @@ import {
   MODEL_BUTTON_SELECTOR,
 } from "../constants.js";
 import { logDomFailure } from "../domDebug.js";
+import { throwIfModelsNotLoaded } from "../modelsLoadFailure.js";
 import { buildClickDispatcher } from "./domEvents.js";
 import { BrowserAutomationError } from "../../oracle/errors.js";
 
@@ -175,6 +176,9 @@ export async function ensureThinkingTime(
     case "model-kind-not-found": {
       await logDomFailure(Runtime, logger, `thinking-${result.status}`);
       logPickerDiagnostic(result, logger);
+      // When ChatGPT's model list never loaded there is no effort menu to find;
+      // report the broken page so the caller reloads instead of blaming the picker.
+      await throwIfModelsNotLoaded(Runtime, { stage: "thinking-time" }, logger);
       const kindHint =
         result.status === "model-kind-not-found" && result.modelKind
           ? ` for ${result.modelKind}`
@@ -199,6 +203,7 @@ export async function ensureThinkingTime(
     default: {
       await logDomFailure(Runtime, logger, "thinking-time-unknown");
       logPickerDiagnostic(result, logger);
+      await throwIfModelsNotLoaded(Runtime, { stage: "thinking-time" }, logger);
       if (strictProEffort) {
         const target = level === "pro" ? "Pro" : "Pro Extended";
         throw new Error(

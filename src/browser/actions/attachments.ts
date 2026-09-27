@@ -2,7 +2,13 @@ import { withoutBrowserCancellation } from "../cancellation.js";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import type { ChromeClient, BrowserAttachment, BrowserLogger } from "../types.js";
-import { INPUT_SELECTORS, SEND_BUTTON_SELECTORS, UPLOAD_STATUS_SELECTORS } from "../constants.js";
+import {
+  COMPOSER_PLUS_SELECTOR,
+  COMPOSER_PLUS_SELECTORS,
+  INPUT_SELECTORS,
+  SEND_BUTTON_SELECTORS,
+  UPLOAD_STATUS_SELECTORS,
+} from "../constants.js";
 import { buildConversationTurnListExpression } from "../conversationTurns.js";
 import { delay } from "../utils.js";
 import { logDomFailure } from "../domDebug.js";
@@ -84,7 +90,7 @@ export async function activateComposerPlus(
           return { status: 'work-selected', startUrl };
         }
         if (navigation.modeUnverified) return { status: 'mode-unverified', startUrl };
-        const selectors = ['#composer-plus-btn', 'button[data-testid="composer-plus-btn"]'];
+        const selectors = [${COMPOSER_PLUS_SELECTORS.map((selector) => `'${selector}'`).join(", ")}];
         for (const selector of selectors) {
           const node = document.querySelector(selector);
           if (!(node instanceof HTMLElement)) continue;
@@ -139,7 +145,7 @@ export async function activateComposerPlus(
           const navigation = ${buildComposerNavigationValidationExpression(startUrl)};
           const rect = button?.getBoundingClientRect();
           return { ...navigation, focused: button instanceof HTMLElement && button.isConnected &&
-            document.activeElement === button && document.querySelector('#composer-plus-btn, button[data-testid="composer-plus-btn"]') === button &&
+            document.activeElement === button && document.querySelector('${COMPOSER_PLUS_SELECTOR}') === button &&
             !button.hasAttribute('disabled') && button.getAttribute('aria-disabled') !== 'true' &&
             rect.width > 0 && rect.height > 0 };
         };

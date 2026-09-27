@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Browser: when ChatGPT's model list fails to load ("Could not load ChatGPT models"), report that instead of a missing model or effort menu, reload the tab and retry the pickers up to twice; serialise tab bring-up per manual-login profile so bursts of consults on one shared Chrome no longer drop their DevTools clients; give every manual-login run its own tab; classify a lost DevTools connection as client disconnect, tab closed, unknown or Chrome closed instead of always "window closed"; allow non-interactive runs two minutes for the session to appear; find the September 2026 composer tools button (`Add files and more`), its menu shell and the "Remove Web search" chip so Web Search and Deep Research activate again.
 - Browser/Bridge: on Windows, run PowerShell and `taskkill` from System32 by absolute path, and `ssh` (bridge host tunnel) and `rsync` (`--copy-profile`) from absolute PATH entries only, so an executable with the same name in the working directory (such as a project folder) never runs in their place. A missing `ssh` or `rsync` now fails with a clear error.
 - Browser: add `browser.windowBounds` to place Oracle's own Chrome window (for example maximised on a second monitor) and, on Windows, `browser.keepWindowBehind` to keep it behind the windows it overlaps unless you click into it.
 - Browser: count nested ChatGPT turn markers once, correlate keyed user turns with completed answers, and preserve existing macOS manual-login sessions while new profiles use the native Keychain.

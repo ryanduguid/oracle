@@ -17,6 +17,12 @@ const DEVTOOLS_ACTIVE_PORT_RELATIVE_PATHS = [
 
 const CHROME_PID_FILENAME = "chrome.pid";
 const ORACLE_PROFILE_LOCK_FILENAME = "oracle-automation.lock";
+/**
+ * Held by one controller at a time from "launch or reuse Chrome" through "tab
+ * created, signed in, model and effort picked". Separate from the automation
+ * lock so a run in its submission window never blocks another run's bring-up.
+ */
+export const ORACLE_BRINGUP_LOCK_FILENAME = "oracle-browser-bringup.lock";
 
 const execFileAsync = promisify(execFile);
 let ownProcessStartTime: Promise<number | null> | undefined;
@@ -329,6 +335,8 @@ export async function acquireProfileRunLock(
     logger?: ProfileStateLogger;
     sessionId?: string;
     signal?: AbortSignal;
+    /** Lock file inside the profile; defaults to the automation lock. */
+    lockFilename?: string;
   },
 ): Promise<ProfileRunLock | null> {
   const timeoutMs = options.timeoutMs;
@@ -339,7 +347,7 @@ export async function acquireProfileRunLock(
     typeof options.pollMs === "number" && Number.isFinite(options.pollMs) && options.pollMs > 0
       ? options.pollMs
       : 1000;
-  const lockPath = path.join(userDataDir, ORACLE_PROFILE_LOCK_FILENAME);
+  const lockPath = path.join(userDataDir, options.lockFilename ?? ORACLE_PROFILE_LOCK_FILENAME);
   const lockId = randomUUID();
   const startedAt = Date.now();
   let warned = false;

@@ -452,7 +452,8 @@ describe("manual-login profile setup gate", () => {
   });
 
   test("caps non-setup manual-login waits so MCP callers fail fast", () => {
-    expect(__test__.resolveManualLoginWaitMs(20 * 60_000, false)).toBe(30_000);
+    // Two minutes: enough for a loaded tab to hydrate, bounded for a signed-out profile.
+    expect(__test__.resolveManualLoginWaitMs(20 * 60_000, false)).toBe(120_000);
     expect(__test__.resolveManualLoginWaitMs(5_000, false)).toBe(5_000);
     expect(__test__.resolveManualLoginWaitMs(20 * 60_000, true)).toBe(20 * 60_000);
   });

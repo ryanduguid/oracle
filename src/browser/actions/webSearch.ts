@@ -1,6 +1,10 @@
 import type { ChromeClient, BrowserLogger } from "../types.js";
 import { BrowserAutomationError } from "../../oracle/errors.js";
-import { INPUT_SELECTORS } from "../constants.js";
+import {
+  COMPOSER_TOOLS_MENU_SELECTOR,
+  INPUT_SELECTORS,
+  WEB_SEARCH_ACTIVE_CHIP_SELECTOR,
+} from "../constants.js";
 import { delay } from "../utils.js";
 import {
   activateComposerPlus,
@@ -24,7 +28,11 @@ export function buildWebSearchVerificationExpression(prompt: string): string {
     const visible = node => node instanceof HTMLElement && node.getBoundingClientRect().width > 0 && node.getBoundingClientRect().height > 0;
     const editor = ${JSON.stringify(INPUT_SELECTORS)}.flatMap(selector => Array.from(document.querySelectorAll(selector))).find(visible);
     if (!editor) return { selected: false, promptMatches: false };
-    const chip = editor.querySelector('[data-inline-selection-pill][data-id="search"][data-system-hint-type="search"]');
+    // Older layout: an inline pill inside the editor. September 2026: a removable
+    // "Web search" chip beside the editor, inside the same composer form.
+    const inlinePill = editor.querySelector('[data-inline-selection-pill][data-id="search"][data-system-hint-type="search"]');
+    const composer = editor.closest('form') || document;
+    const chip = inlinePill || Array.from(composer.querySelectorAll('${WEB_SEARCH_ACTIVE_CHIP_SELECTOR}')).find(visible) || null;
     const copy = editor.cloneNode(true);
     copy.querySelectorAll('[data-inline-selection-pill], [data-inline-selection-pill-cursor-target]').forEach(node => node.remove());
     const readText = node => {
@@ -44,8 +52,9 @@ export function buildWebSearchSelectionExpression(navigationUrl: string): string
     const navigation = ${buildComposerNavigationValidationExpression(navigationUrl)};
     if (!navigation.contextMatches || navigation.workSelected || navigation.modeUnverified) return 'context-changed';
     const visible = node => node instanceof HTMLElement && node.getBoundingClientRect().width > 0 && node.getBoundingClientRect().height > 0;
-    const roots = Array.from(document.querySelectorAll('main .popover, [data-radix-popper-content-wrapper], [data-floating-ui-portal], [role="menu"], [role="listbox"]')).filter(visible);
-    const candidates = roots.flatMap(root => Array.from(root.querySelectorAll('[data-radix-collection-item], [role="menuitem"], [role="option"], .__menu-item, [class*="menu-item"]')));
+    const roots = Array.from(document.querySelectorAll('main .popover, [data-radix-popper-content-wrapper], [data-floating-ui-portal], [role="menu"], [role="listbox"], ${COMPOSER_TOOLS_MENU_SELECTOR}')).filter(visible);
+    // September 2026 menu entries are plain buttons whose text is the label plus its description.
+    const candidates = roots.flatMap(root => Array.from(root.querySelectorAll('[data-radix-collection-item], [role="menuitem"], [role="option"], .__menu-item, [class*="menu-item"], button')));
     const match = candidates.find(node => {
       if (!visible(node) || node.hasAttribute('disabled') || node.getAttribute('aria-disabled') === 'true') return false;
       return matchesLabel(node.textContent ?? '');

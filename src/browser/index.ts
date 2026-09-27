@@ -95,6 +95,7 @@ import { alignPromptEchoPair, buildPromptEchoMatcher } from "./reattachHelpers.j
 import { buildConversationTurnCountExpression } from "./conversationTurns.js";
 import type { ProfileRunLock } from "./profileState.js";
 import {
+  ORACLE_BRINGUP_LOCK_FILENAME,
   cleanupStaleProfileState,
   acquireProfileRunLock,
   shouldCleanupManualLoginProfileState,
@@ -102,12 +103,17 @@ import {
   writeChromePid,
   writeDevToolsActivePort,
 } from "./profileState.js";
+
+// Queued bring-ups wait behind at most two others (three tabs per profile); each
+// takes well under a minute, so ten minutes only ever trips on a stuck controller.
+const BROWSER_BRINGUP_LOCK_TIMEOUT_MS = 10 * 60_000;
 import {
+  classifyChromeDisconnect,
   connectionLostUserMessage,
-  isRecoverableChromeDisconnect,
   probeChromeTargetLiveness,
 } from "./cdpLiveness.js";
 import { acquireBrowserTabLease, type BrowserTabLease } from "./tabLeaseRegistry.js";
+import { retryAfterReloadWhenModelsNotLoaded } from "./modelsLoadFailure.js";
 import {
   appendArtifacts,
   saveBrowserTranscriptArtifact,
@@ -921,6 +927,15 @@ async function runBrowserModeInternal(
   let thinkingSelectionEvidence: BrowserThinkingSelectionEvidence | undefined;
   let researchPlan: BrowserResearchPlanMetadata | undefined;
   let tabLease: BrowserTabLease | null = null;
+  // Held from "launch or reuse Chrome" until the composer is configured, so tab
+  // bring-up is serialised per profile while thinking phases still overlap.
+  let bringupLock: ProfileRunLock | null = null;
+  const releaseBringupLockIfHeld = async () => {
+    if (!bringupLock) return;
+    const handle = bringupLock;
+    bringupLock = null;
+    await withoutBrowserCancellation(() => handle.release()).catch(() => undefined);
+  };
   let conversationUrlMonitor: ConversationUrlMonitor | null = null;
   const emitRuntimeHint = async (): Promise<void> => {
     if (!chrome?.port) {
@@ -1078,6 +1093,24 @@ async function runBrowserModeInternal(
   let acquiredChrome: { chrome: BrowserChrome; reusedChrome: LaunchedChrome | null };
   try {
     if (manualLogin) {
+      // Three consults starting on one shared Chrome within seconds lost their
+      // CDP clients during bring-up (27 September 2026). One controller at a
+      // time launches or reuses Chrome, opens its tab, checks the sign-in and
+      // sets the pickers; the lock is released before upload and submission.
+      bringupLock = await cancellation.acquire(
+        () =>
+          acquireProfileRunLock(userDataDir, {
+            timeoutMs: BROWSER_BRINGUP_LOCK_TIMEOUT_MS,
+            pollMs: 500,
+            logger,
+            sessionId: options.sessionId,
+            signal: options.signal,
+            lockFilename: ORACLE_BRINGUP_LOCK_FILENAME,
+          }),
+        async (lock) => {
+          await lock?.release();
+        },
+      );
       acquiredChrome = await cancellation.acquire(
         () => acquireManualLoginChromeForRun(userDataDir, config, logger, options.sessionId),
         async ({ chrome }) => {
@@ -1099,6 +1132,7 @@ async function runBrowserModeInternal(
     }
   } catch (error) {
     await withoutBrowserCancellation(async () => {
+      await releaseBringupLockIfHeld();
       if (tabLease) {
         const handle = tabLease;
         tabLease = null;
@@ -1171,7 +1205,9 @@ async function runBrowserModeInternal(
           `Attached to existing ChatGPT tab ${attached.targetId}${attached.tab.url ? ` (${attached.tab.url})` : ""}`,
         );
       } else {
-        const strictTabIsolation = Boolean(manualLogin && reusedChrome);
+        // A Chrome this worker launched can already be serving another worker's
+        // default tab, so every manual-login run gets its own target.
+        const strictTabIsolation = Boolean(manualLogin);
         const devtoolsRetries = manualLogin ? 6 : 0;
         const connection = await cancellation.acquire(
           () =>
@@ -1221,37 +1257,41 @@ async function runBrowserModeInternal(
             port: chrome.port,
             targetId: lastTargetId ?? isolatedTargetId,
           });
-          const recoverable = isRecoverableChromeDisconnect(liveness);
+          const disconnectCause = classifyChromeDisconnect(liveness);
+          const recoverable = disconnectCause === "cdp-client-disconnect";
           if (recoverable) {
             logger(
               "CDP client disconnected; Chrome/target still reachable. Leaving run recoverable for reattach.",
             );
           } else {
-            logger("Chrome window closed; attempting to abort run.");
+            logger(`Chrome connection lost (${disconnectCause}); attempting to abort run.`);
           }
           reject(
-            new BrowserAutomationError(connectionLostUserMessage({ recoverable }), {
-              stage: "connection-lost",
-              recoverableDisconnect: recoverable,
-              disconnectCause: recoverable ? "cdp-client-disconnect" : "chrome-closed",
-              runtime: {
-                chromePid: chrome.pid,
-                chromePort: chrome.port,
-                chromeHost,
-                userDataDir,
-                chromeTargetId: lastTargetId ?? isolatedTargetId ?? undefined,
-                tabUrl: liveness.matchedUrl ?? lastUrl,
-                conversationId:
-                  (liveness.matchedUrl ?? lastUrl)
-                    ? extractConversationIdFromUrl(liveness.matchedUrl ?? lastUrl ?? "")
-                    : undefined,
-                promptSubmitted,
-                submittedPromptHash,
-                ownedRecoveryTarget,
-                controllerPid: process.pid,
-                researchPlan,
+            new BrowserAutomationError(
+              connectionLostUserMessage({ recoverable, cause: disconnectCause }),
+              {
+                stage: "connection-lost",
+                recoverableDisconnect: recoverable,
+                disconnectCause,
+                runtime: {
+                  chromePid: chrome.pid,
+                  chromePort: chrome.port,
+                  chromeHost,
+                  userDataDir,
+                  chromeTargetId: lastTargetId ?? isolatedTargetId ?? undefined,
+                  tabUrl: liveness.matchedUrl ?? lastUrl,
+                  conversationId:
+                    (liveness.matchedUrl ?? lastUrl)
+                      ? extractConversationIdFromUrl(liveness.matchedUrl ?? lastUrl ?? "")
+                      : undefined,
+                  promptSubmitted,
+                  submittedPromptHash,
+                  ownedRecoveryTarget,
+                  controllerPid: process.pid,
+                  researchPlan,
+                },
               },
-            }),
+            ),
           );
         })();
       });
@@ -1498,65 +1538,79 @@ async function runBrowserModeInternal(
     const updateConversationHint = conversationUrlMonitor.update;
     await captureRuntimeSnapshot();
     const modelStrategy = config.modelStrategy ?? DEFAULT_MODEL_STRATEGY;
-    if (config.desiredModel && modelStrategy !== "ignore" && !isResumingConversation) {
-      modelSelectionEvidence = await raceWithDisconnect(
-        withRetries(
-          () =>
-            ensureModelSelection(Runtime, config.desiredModel as string, logger, modelStrategy, {
-              implicitDefault: config.modelIsImplicitDefault,
-            }),
-          {
-            retries: 2,
-            delayMs: 300,
-            onRetry: (attempt, error) => {
-              if (options.verbose) {
-                logger(
-                  `[retry] Model picker attempt ${attempt + 1}: ${error instanceof Error ? error.message : error}`,
-                );
-              }
-            },
-          },
-        ),
-      ).catch((error) => {
-        // Login has already been verified above. Preserve the picker failure instead of
-        // misdiagnosing an unavailable model as missing cookies.
-        throw normalizeAuthenticatedModelSelectionError(error);
-      });
-      await raceWithDisconnect(ensurePromptReady(Runtime, config.inputTimeoutMs, logger));
-      logger(
-        `Prompt textarea ready (after model switch, ${promptText.length.toLocaleString()} chars queued)`,
-      );
-    } else if (modelStrategy === "ignore" || isResumingConversation) {
-      modelSelectionEvidence = buildSkippedModelSelectionEvidence(
-        config.desiredModel,
-        modelStrategy,
-      );
-      logger(
-        isResumingConversation
-          ? "Model picker: skipped (resumed conversation)"
-          : "Model picker: skipped (strategy=ignore)",
-      );
-    }
     const deepResearch = config.researchMode === "deep";
-    if (shouldApplyThinkingTimeSelection(config)) {
-      const thinkingTargetModel = modelStrategy === "select" ? config.desiredModel : null;
-      thinkingSelectionEvidence = await raceWithDisconnect(
-        withRetries(
-          () => ensureThinkingTime(Runtime, config.thinkingTime, logger, thinkingTargetModel),
-          {
-            retries: 2,
-            delayMs: 300,
-            onRetry: (attempt, error) => {
-              if (options.verbose) {
-                logger(
-                  `[retry] Thinking time (${config.thinkingTime}) attempt ${attempt + 1}: ${error instanceof Error ? error.message : error}`,
-                );
-              }
+    // Model and effort selection run together so that a page whose model list
+    // never loaded is reloaded once and both pickers start again on the fresh page.
+    const selectComposerModes = async () => {
+      if (config.desiredModel && modelStrategy !== "ignore" && !isResumingConversation) {
+        modelSelectionEvidence = await raceWithDisconnect(
+          withRetries(
+            () =>
+              ensureModelSelection(Runtime, config.desiredModel as string, logger, modelStrategy, {
+                implicitDefault: config.modelIsImplicitDefault,
+              }),
+            {
+              retries: 2,
+              delayMs: 300,
+              onRetry: (attempt, error) => {
+                if (options.verbose) {
+                  logger(
+                    `[retry] Model picker attempt ${attempt + 1}: ${error instanceof Error ? error.message : error}`,
+                  );
+                }
+              },
             },
-          },
-        ),
-      );
-    }
+          ),
+        ).catch((error) => {
+          // Login has already been verified above. Preserve the picker failure instead of
+          // misdiagnosing an unavailable model as missing cookies.
+          throw normalizeAuthenticatedModelSelectionError(error);
+        });
+        await raceWithDisconnect(ensurePromptReady(Runtime, config.inputTimeoutMs, logger));
+        logger(
+          `Prompt textarea ready (after model switch, ${promptText.length.toLocaleString()} chars queued)`,
+        );
+      } else if (modelStrategy === "ignore" || isResumingConversation) {
+        modelSelectionEvidence = buildSkippedModelSelectionEvidence(
+          config.desiredModel,
+          modelStrategy,
+        );
+        logger(
+          isResumingConversation
+            ? "Model picker: skipped (resumed conversation)"
+            : "Model picker: skipped (strategy=ignore)",
+        );
+      }
+      if (shouldApplyThinkingTimeSelection(config)) {
+        const thinkingTargetModel = modelStrategy === "select" ? config.desiredModel : null;
+        thinkingSelectionEvidence = await raceWithDisconnect(
+          withRetries(
+            () => ensureThinkingTime(Runtime, config.thinkingTime, logger, thinkingTargetModel),
+            {
+              retries: 2,
+              delayMs: 300,
+              onRetry: (attempt, error) => {
+                if (options.verbose) {
+                  logger(
+                    `[retry] Thinking time (${config.thinkingTime}) attempt ${attempt + 1}: ${error instanceof Error ? error.message : error}`,
+                  );
+                }
+              },
+            },
+          ),
+        );
+      }
+    };
+    await retryAfterReloadWhenModelsNotLoaded(selectComposerModes, {
+      reload: async () => {
+        await raceWithDisconnect(Page.reload({ ignoreCache: true }));
+        await raceWithDisconnect(ensurePromptReady(Runtime, config.inputTimeoutMs, logger));
+      },
+      logger,
+    });
+    // The composer is configured: let the next controller bring its tab up
+    // while this run uploads, submits and waits.
+    await releaseBringupLockIfHeld();
     const profileLockTimeoutMs = manualLogin ? (config.profileLockTimeoutMs ?? 0) : 0;
     let profileLock: ProfileRunLock | null = null;
     const acquireProfileLockIfNeeded = async () => {
@@ -2497,13 +2551,14 @@ async function runBrowserModeInternal(
       port: chrome.port,
       targetId: lastTargetId ?? isolatedTargetId,
     });
-    const recoverable = isRecoverableChromeDisconnect(liveness);
+    const disconnectCause = classifyChromeDisconnect(liveness);
+    const recoverable = disconnectCause === "cdp-client-disconnect";
     throw new BrowserAutomationError(
-      connectionLostUserMessage({ recoverable }),
+      connectionLostUserMessage({ recoverable, cause: disconnectCause }),
       {
         stage: "connection-lost",
         recoverableDisconnect: recoverable,
-        disconnectCause: recoverable ? "cdp-client-disconnect" : "chrome-closed",
+        disconnectCause,
         runtime: {
           chromePid: chrome.pid,
           chromePort: chrome.port,
@@ -2618,6 +2673,8 @@ async function runBrowserModeInternal(
           preserveOneBlank: true,
         });
       };
+      // A failure before the composer was configured still holds the bring-up lock.
+      await releaseBringupLockIfHeld();
       if (tabLease) {
         const handle = tabLease;
         tabLease = null;
@@ -3154,57 +3211,66 @@ async function runRemoteBrowserMode(
     }
 
     const modelStrategy = config.modelStrategy ?? DEFAULT_MODEL_STRATEGY;
-    if (config.desiredModel && modelStrategy !== "ignore" && !config.resumeConversationUrl) {
-      modelSelectionEvidence = await withRetries(
-        () =>
-          ensureModelSelection(Runtime, config.desiredModel as string, logger, modelStrategy, {
-            implicitDefault: config.modelIsImplicitDefault,
-          }),
-        {
-          retries: 2,
-          delayMs: 300,
-          onRetry: (attempt, error) => {
-            if (options.verbose) {
-              logger(
-                `[retry] Model picker attempt ${attempt + 1}: ${error instanceof Error ? error.message : error}`,
-              );
-            }
-          },
-        },
-      );
-      await ensurePromptReady(Runtime, config.inputTimeoutMs, logger);
-      logger(
-        `Prompt textarea ready (after model switch, ${promptText.length.toLocaleString()} chars queued)`,
-      );
-    } else if (modelStrategy === "ignore" || config.resumeConversationUrl) {
-      modelSelectionEvidence = buildSkippedModelSelectionEvidence(
-        config.desiredModel,
-        modelStrategy,
-      );
-      logger(
-        config.resumeConversationUrl
-          ? "Model picker: skipped (resumed conversation)"
-          : "Model picker: skipped (strategy=ignore)",
-      );
-    }
     const deepResearch = config.researchMode === "deep";
-    if (shouldApplyThinkingTimeSelection(config)) {
-      const thinkingTargetModel = modelStrategy === "select" ? config.desiredModel : null;
-      thinkingSelectionEvidence = await withRetries(
-        () => ensureThinkingTime(Runtime, config.thinkingTime, logger, thinkingTargetModel),
-        {
-          retries: 2,
-          delayMs: 300,
-          onRetry: (attempt, error) => {
-            if (options.verbose) {
-              logger(
-                `[retry] Thinking time (${config.thinkingTime}) attempt ${attempt + 1}: ${error instanceof Error ? error.message : error}`,
-              );
-            }
+    const selectComposerModes = async () => {
+      if (config.desiredModel && modelStrategy !== "ignore" && !config.resumeConversationUrl) {
+        modelSelectionEvidence = await withRetries(
+          () =>
+            ensureModelSelection(Runtime, config.desiredModel as string, logger, modelStrategy, {
+              implicitDefault: config.modelIsImplicitDefault,
+            }),
+          {
+            retries: 2,
+            delayMs: 300,
+            onRetry: (attempt, error) => {
+              if (options.verbose) {
+                logger(
+                  `[retry] Model picker attempt ${attempt + 1}: ${error instanceof Error ? error.message : error}`,
+                );
+              }
+            },
           },
-        },
-      );
-    }
+        );
+        await ensurePromptReady(Runtime, config.inputTimeoutMs, logger);
+        logger(
+          `Prompt textarea ready (after model switch, ${promptText.length.toLocaleString()} chars queued)`,
+        );
+      } else if (modelStrategy === "ignore" || config.resumeConversationUrl) {
+        modelSelectionEvidence = buildSkippedModelSelectionEvidence(
+          config.desiredModel,
+          modelStrategy,
+        );
+        logger(
+          config.resumeConversationUrl
+            ? "Model picker: skipped (resumed conversation)"
+            : "Model picker: skipped (strategy=ignore)",
+        );
+      }
+      if (shouldApplyThinkingTimeSelection(config)) {
+        const thinkingTargetModel = modelStrategy === "select" ? config.desiredModel : null;
+        thinkingSelectionEvidence = await withRetries(
+          () => ensureThinkingTime(Runtime, config.thinkingTime, logger, thinkingTargetModel),
+          {
+            retries: 2,
+            delayMs: 300,
+            onRetry: (attempt, error) => {
+              if (options.verbose) {
+                logger(
+                  `[retry] Thinking time (${config.thinkingTime}) attempt ${attempt + 1}: ${error instanceof Error ? error.message : error}`,
+                );
+              }
+            },
+          },
+        );
+      }
+    };
+    await retryAfterReloadWhenModelsNotLoaded(selectComposerModes, {
+      reload: async () => {
+        await Page.reload({ ignoreCache: true });
+        await ensurePromptReady(Runtime, config.inputTimeoutMs, logger);
+      },
+      logger,
+    });
     const submitOnce = async (prompt: string, submissionAttachments: BrowserAttachment[]) => {
       await claimBrowserTarget(Runtime, targetClaimId);
       const baselineSnapshot = await readAssistantSnapshot(Runtime).catch(() => null);
@@ -3960,29 +4026,33 @@ async function runRemoteBrowserMode(
       targetId: remoteTargetId,
       browserWSEndpoint,
     });
-    const recoverable = isRecoverableChromeDisconnect(liveness);
-    throw new BrowserAutomationError(connectionLostUserMessage({ recoverable, remote: true }), {
-      stage: "connection-lost",
-      recoverableDisconnect: recoverable,
-      disconnectCause: recoverable ? "cdp-client-disconnect" : "chrome-closed",
-      runtime: {
-        chromeHost: host,
-        chromePort: port,
-        chromeBrowserWSEndpoint: browserWSEndpoint,
-        chromeProfileRoot,
-        chromeTargetId: remoteTargetId ?? undefined,
-        tabUrl: liveness.matchedUrl ?? lastUrl,
-        conversationId:
-          (liveness.matchedUrl ?? lastUrl)
-            ? extractConversationIdFromUrl(liveness.matchedUrl ?? lastUrl ?? "")
-            : undefined,
-        promptSubmitted,
-        submittedPromptHash,
-        ownedRecoveryTarget,
-        controllerPid: process.pid,
-        researchPlan,
+    const disconnectCause = classifyChromeDisconnect(liveness);
+    const recoverable = disconnectCause === "cdp-client-disconnect";
+    throw new BrowserAutomationError(
+      connectionLostUserMessage({ recoverable, remote: true, cause: disconnectCause }),
+      {
+        stage: "connection-lost",
+        recoverableDisconnect: recoverable,
+        disconnectCause,
+        runtime: {
+          chromeHost: host,
+          chromePort: port,
+          chromeBrowserWSEndpoint: browserWSEndpoint,
+          chromeProfileRoot,
+          chromeTargetId: remoteTargetId ?? undefined,
+          tabUrl: liveness.matchedUrl ?? lastUrl,
+          conversationId:
+            (liveness.matchedUrl ?? lastUrl)
+              ? extractConversationIdFromUrl(liveness.matchedUrl ?? lastUrl ?? "")
+              : undefined,
+          promptSubmitted,
+          submittedPromptHash,
+          ownedRecoveryTarget,
+          controllerPid: process.pid,
+          researchPlan,
+        },
       },
-    });
+    );
   } finally {
     await withoutBrowserCancellation(async () => {
       stopThinkingMonitor?.();

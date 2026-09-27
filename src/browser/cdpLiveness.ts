@@ -68,34 +68,54 @@ export async function probeChromeTargetLiveness(options: {
   }
 }
 
-export function isRecoverableChromeDisconnect(liveness: ChromeTargetLiveness): boolean {
+/**
+ * What a CDP disconnect meant, read from the liveness probe. Only a confirmed
+ * live target is recoverable; the other states each say what was observed so a
+ * run whose Chrome is still up is never reported as "window closed".
+ */
+export type ChromeDisconnectCause =
+  | "cdp-client-disconnect"
+  | "target-closed"
+  | "liveness-unknown"
+  | "chrome-closed";
+
+export function classifyChromeDisconnect(liveness: ChromeTargetLiveness): ChromeDisconnectCause {
   if (!liveness.endpointReachable) {
-    return false;
+    return "chrome-closed";
   }
-  // Confirmed live target → recoverable.
   if (liveness.targetFound === true) {
-    return true;
+    return "cdp-client-disconnect";
   }
-  // Confirmed missing target → not recoverable.
   if (liveness.targetFound === false) {
-    return false;
+    return "target-closed";
   }
   // targetFound === null:
-  // - no target id was provided (endpoint-only check) → recoverable
-  // - target list failed after a specific id was requested (error set) → fail closed
-  return !liveness.error;
+  // - no target id was provided (endpoint-only check) → the client dropped, Chrome is up
+  // - target list failed after a specific id was requested (error set) → unknown, fail closed
+  return liveness.error ? "liveness-unknown" : "cdp-client-disconnect";
+}
+
+export function isRecoverableChromeDisconnect(liveness: ChromeTargetLiveness): boolean {
+  return classifyChromeDisconnect(liveness) === "cdp-client-disconnect";
 }
 
 export function connectionLostUserMessage(options: {
   recoverable: boolean;
   remote?: boolean;
+  cause?: ChromeDisconnectCause;
 }): string {
-  if (options.recoverable) {
-    return options.remote
-      ? "Remote Chrome DevTools client disconnected before oracle finished; the browser target appears still alive."
-      : "Chrome DevTools client disconnected before oracle finished; the browser target appears still alive.";
+  const cause = options.cause ?? (options.recoverable ? "cdp-client-disconnect" : "chrome-closed");
+  const where = options.remote ? "Remote Chrome" : "Chrome";
+  switch (cause) {
+    case "cdp-client-disconnect":
+      return `${where} DevTools client disconnected before oracle finished; the browser target appears still alive.`;
+    case "target-closed":
+      return `${where} closed the ChatGPT tab before oracle finished; Chrome itself is still running.`;
+    case "liveness-unknown":
+      return `${where} DevTools client disconnected before oracle finished and Chrome's state could not be confirmed; the window may still be open.`;
+    default:
+      return options.remote
+        ? "Remote Chrome connection lost before Oracle finished."
+        : "Chrome window closed before oracle finished. Please keep it open until completion.";
   }
-  return options.remote
-    ? "Remote Chrome connection lost before Oracle finished."
-    : "Chrome window closed before oracle finished. Please keep it open until completion.";
 }
