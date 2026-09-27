@@ -25,11 +25,12 @@ type ModelSelectionResult =
   | undefined;
 
 // The model/effort picker is a composer pill that React mounts a beat after the page
-// becomes interactive (~1-4s on a cold profile, e.g. cookie-sync's throwaway Chrome).
+// becomes interactive (~1-4s on a cold profile, e.g. cookie-sync's throwaway Chrome; a cold
+// hidden-window launch on a busy Windows host has taken more than 8s).
 // Re-evaluate while it is still missing, up to a bounded deadline, so selection does not
 // give up before the pill renders. Only "button-missing" waits; a genuine
 // "option-not-found" surfaces immediately.
-const MODEL_BUTTON_WAIT_MS = 8000;
+const MODEL_BUTTON_WAIT_MS = 20_000;
 const MODEL_BUTTON_POLL_MS = 250;
 
 export async function ensureModelSelection(
