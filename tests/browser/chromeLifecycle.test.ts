@@ -442,6 +442,118 @@ describe("hidden-window launch flags", () => {
   });
 });
 
+describe("configured window bounds", () => {
+  const secondMonitor = {
+    left: -1080,
+    top: -487,
+    width: 1080,
+    height: 1920,
+    windowState: "maximized" as const,
+  };
+
+  const onSecondMonitor = {
+    left: -1088,
+    top: -495,
+    width: 1096,
+    height: 1936,
+    windowState: "maximized",
+  };
+  const onPrimary = { left: -8, top: -8, width: 3456, height: 1456, windowState: "maximized" };
+  const restored = { left: 80, top: 80, width: 1280, height: 720, windowState: "normal" };
+  // A CDP Browser domain whose window starts at `initial`, then reports each readback in turn.
+  const fakeBrowser = (initial: object, ...readbacks: object[]) => ({
+    getWindowForTarget: vi.fn().mockResolvedValue({ windowId: 3, bounds: initial }),
+    getWindowBounds: vi.fn().mockImplementation(async () => ({ bounds: readbacks.shift() })),
+    setWindowBounds: vi.fn().mockResolvedValue(undefined),
+  });
+  const place = async (browser: ReturnType<typeof fakeBrowser>, target: object) => {
+    const { applyChromeWindowBounds } = await import("../../src/browser/chromeLifecycle.js");
+    const logger = vi.fn();
+    await applyChromeWindowBounds({ Browser: browser } as never, target, logger as never);
+    return logger;
+  };
+  const statesSet = (browser: ReturnType<typeof fakeBrowser>) =>
+    browser.setWindowBounds.mock.calls.map(([call]) => call.bounds.windowState);
+
+  test("moves a window onto the configured display before maximising it", async () => {
+    const browser = fakeBrowser(onPrimary, restored, onSecondMonitor);
+
+    const logger = await place(browser, secondMonitor);
+
+    expect(browser.setWindowBounds.mock.calls).toEqual([
+      [{ windowId: 3, bounds: { windowState: "normal" } }],
+      [
+        {
+          windowId: 3,
+          bounds: { left: -1080, top: -487, width: 1080, height: 1920, windowState: "normal" },
+        },
+      ],
+      [{ windowId: 3, bounds: { windowState: "maximized" } }],
+    ]);
+    expect(logger).toHaveBeenCalledWith(expect.stringContaining("Chrome window placed"));
+  });
+
+  test("leaves a window alone when it is already maximised on the configured display", async () => {
+    const browser = fakeBrowser(onSecondMonitor);
+
+    await place(browser, secondMonitor);
+
+    expect(browser.setWindowBounds).not.toHaveBeenCalled();
+  });
+
+  test("moves a window whose borders only reach onto the configured display", async () => {
+    const browser = fakeBrowser(onSecondMonitor, restored, onPrimary);
+
+    await place(browser, { left: 0, top: 0, width: 3440, height: 1440, windowState: "maximized" });
+
+    expect(statesSet(browser)).toEqual(["normal", "normal", "maximized"]);
+  });
+
+  test("keeps restoring a fullscreen window until it is normal before moving it", async () => {
+    const browser = fakeBrowser(
+      { ...onPrimary, windowState: "fullscreen" },
+      onPrimary,
+      restored,
+      onSecondMonitor,
+    );
+
+    await place(browser, secondMonitor);
+
+    expect(statesSet(browser)).toEqual(["normal", "normal", "normal", "maximized"]);
+  });
+
+  test("stages a small window at a target without a size so it maximises there", async () => {
+    const browser = fakeBrowser({ ...restored, width: 3440, height: 1440 }, onSecondMonitor);
+
+    await place(browser, { left: -1080, top: -487, windowState: "maximized" });
+
+    expect(browser.setWindowBounds.mock.calls[0]).toEqual([
+      {
+        windowId: 3,
+        bounds: { left: -1080, top: -487, width: 800, height: 600, windowState: "normal" },
+      },
+    ]);
+  });
+
+  test("maximises in place when no position is configured", async () => {
+    const browser = fakeBrowser(restored, onPrimary);
+
+    await place(browser, { windowState: "maximized" });
+
+    expect(browser.setWindowBounds.mock.calls).toEqual([
+      [{ windowId: 3, bounds: { windowState: "maximized" } }],
+    ]);
+  });
+
+  test("reports a window that did not reach the configured bounds", async () => {
+    const browser = fakeBrowser(onPrimary, restored, onPrimary);
+
+    const logger = await place(browser, secondMonitor);
+
+    expect(logger).toHaveBeenCalledWith(expect.stringContaining("did not reach"));
+  });
+});
+
 describe("connectWithNewTab", () => {
   beforeEach(() => {
     cdpMock.mockReset();

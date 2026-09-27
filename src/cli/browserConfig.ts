@@ -10,6 +10,7 @@ import { parseDuration } from "../duration.js";
 import { resolveBrowserApprovalWait } from "../browser/config.js";
 import { normalizeBrowserModelStrategy } from "../browser/modelStrategy.js";
 import type {
+  BrowserWindowBounds,
   BrowserArchiveMode,
   BrowserModelStrategy,
   BrowserResearchMode,
@@ -88,6 +89,8 @@ export interface BrowserFlagOptions {
   browserInlineCookies?: string;
   browserHeadless?: boolean;
   browserHideWindow?: boolean;
+  browserWindowBounds?: BrowserWindowBounds;
+  browserKeepWindowBehind?: boolean;
   browserKeepBrowser?: boolean;
   browserManualLogin?: boolean;
   browserManualLoginProfileDir?: string | null;
@@ -351,6 +354,8 @@ export async function buildBrowserConfig(
     manualLoginCookieSync: inline?.cookies?.length ? true : options.browserManualLoginCookieSync,
     copyProfileSource: options.copyProfile ?? undefined,
     hideWindow: options.browserHideWindow ? true : undefined,
+    windowBounds: options.browserWindowBounds,
+    keepWindowBehind: options.browserKeepWindowBehind ? true : undefined,
     desiredModel,
     modelStrategy,
     debug: options.verbose ? true : undefined,

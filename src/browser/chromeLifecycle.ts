@@ -18,6 +18,7 @@ import { delay } from "./utils.js";
 import { isWsl, resolveWslChromeLaunchRoute } from "./wslHost.js";
 import { BrowserCancellation } from "./cancellation.js";
 import { acquireBrowserConnection } from "./browserConnection.js";
+import { startChromeWindowKeeper } from "./windowKeeper.js";
 
 export async function launchChrome(
   config: ResolvedBrowserConfig,
@@ -88,6 +89,9 @@ export async function launchChrome(
   logger(`Launched Chrome${pidLabel} on port ${launcher.port}${hostLabel}`);
   if (detachSharedChrome) {
     logger("[browser] Browser control: Windows Chrome lifecycle detached=true; windowsHide=true.");
+  }
+  if (config.keepWindowBehind && !config.headless && process.platform === "win32" && launcher.pid) {
+    await startChromeWindowKeeper(launcher.pid, logger);
   }
   return Object.assign(launcher, { host: connectHost ?? "127.0.0.1" }) as LaunchedChrome & {
     host?: string;
@@ -233,6 +237,84 @@ export async function positionChromeWindowOnscreen(
     const message = error instanceof Error ? error.message : String(error);
     logger(`Failed to position Chrome window on-screen: ${message}`);
   }
+}
+
+/** Moves the target's window to the configured bounds unless it is already there. */
+export async function applyChromeWindowBounds(
+  client: ChromeClient,
+  target: Protocol.Browser.Bounds,
+  logger: BrowserLogger,
+): Promise<void> {
+  const { windowState = "normal", ...rect } = target;
+  try {
+    const found = await client.Browser.getWindowForTarget();
+    const { windowId } = found;
+    const readBounds = async () => (await client.Browser.getWindowBounds({ windowId })).bounds;
+    let bounds = found.bounds;
+    if (windowBoundsSatisfied(bounds, windowState, rect)) {
+      return;
+    }
+    // CDP only moves a normal window, and leaving fullscreen can first land in the maximised state.
+    for (
+      let attempt = 0;
+      attempt < 3 && (bounds.windowState ?? "normal") !== "normal";
+      attempt += 1
+    ) {
+      await client.Browser.setWindowBounds({ windowId, bounds: { windowState: "normal" } });
+      bounds = await readBounds();
+    }
+    // Windows maximises onto the display the window overlaps most, so stage a small window at a
+    // target position that has no size.
+    const targetsDisplay =
+      (windowState === "maximized" || windowState === "fullscreen") &&
+      (rect.left !== undefined || rect.top !== undefined);
+    const staged = targetsDisplay ? { width: 800, height: 600, ...rect } : rect;
+    if (Object.keys(staged).length > 0) {
+      await client.Browser.setWindowBounds({
+        windowId,
+        bounds: { ...staged, windowState: "normal" },
+      });
+    }
+    if (windowState !== "normal") {
+      await client.Browser.setWindowBounds({ windowId, bounds: { windowState } });
+    }
+    const placed = await readBounds();
+    logger(
+      windowBoundsSatisfied(placed, windowState, rect)
+        ? `Chrome window placed at ${JSON.stringify(target)}`
+        : `Chrome window did not reach ${JSON.stringify(target)}; now ${JSON.stringify(placed)}`,
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger(`Failed to place Chrome window: ${message}`);
+  }
+}
+
+function windowBoundsSatisfied(
+  current: Protocol.Browser.Bounds,
+  windowState: Protocol.Browser.WindowState,
+  rect: Omit<Protocol.Browser.Bounds, "windowState">,
+): boolean {
+  if ((current.windowState ?? "normal") !== windowState) {
+    return false;
+  }
+  if (windowState !== "maximized" && windowState !== "fullscreen") {
+    return (Object.keys(rect) as Array<keyof typeof rect>).every(
+      (key) => current[key] === rect[key],
+    );
+  }
+  // A maximised or fullscreen window is on the requested display when it covers the centre of
+  // the requested area (its corner when no size is set); raw bounds include invisible borders
+  // that reach onto the neighbouring display.
+  const centre = (start?: number, size?: number) =>
+    start === undefined ? undefined : start + (size ?? 0) / 2;
+  const covers = (start?: number, size?: number, point?: number) =>
+    point === undefined ||
+    (start !== undefined && size !== undefined && point >= start && point < start + size);
+  return (
+    covers(current.left, current.width, centre(rect.left, rect.width)) &&
+    covers(current.top, current.height, centre(rect.top, rect.height))
+  );
 }
 
 const CHROME_WINDOW_STATE_FILENAME = "oracle-window-state.json";

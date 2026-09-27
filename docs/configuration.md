@@ -52,6 +52,8 @@ JSON5 parsing, so trailing commas and comments are allowed.
     manualLoginProfileDir: null, // override profile dir (or set ORACLE_BROWSER_PROFILE_DIR)
     headless: false,
     hideWindow: false,
+    windowBounds: null, // user config only: place Oracle's own Chrome with CDP Browser.Bounds, e.g. { left: -1080, top: -487, width: 1080, height: 1920, windowState: "maximized" }; give width and height to target a display exactly (ignored with hideWindow)
+    keepWindowBehind: false, // user config only, Windows: keep Oracle's own Chrome behind the windows it overlaps unless you click into it
     keepBrowser: false,
     manualLoginCookieSync: false, // explicitly seed the manual-login profile from live Chrome cookies
   },

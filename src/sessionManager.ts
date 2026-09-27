@@ -6,6 +6,7 @@ import type { WriteStream } from "node:fs";
 import { randomUUID } from "node:crypto";
 import net from "node:net";
 import type {
+  BrowserWindowBounds,
   BrowserArchiveMode,
   BrowserArchiveResult,
   BrowserModelStrategy,
@@ -71,6 +72,8 @@ export interface BrowserSessionConfig {
   headless?: boolean;
   keepBrowser?: boolean;
   hideWindow?: boolean;
+  windowBounds?: BrowserWindowBounds | null;
+  keepWindowBehind?: boolean;
   desiredModel?: string | null;
   /** The caller omitted a model and inherited Oracle's browser default. */
   modelIsImplicitDefault?: boolean;

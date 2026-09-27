@@ -4,6 +4,7 @@ import type { UserConfig } from "../config.js";
 import { normalizeThinkingTimeLevel } from "../oracle/thinkingTime.js";
 import type { ThinkingTimeLevel } from "../oracle/types.js";
 import type {
+  BrowserWindowBounds,
   BrowserArchiveMode,
   BrowserModelStrategy,
   BrowserResearchMode,
@@ -37,6 +38,8 @@ export interface BrowserDefaultsOptions {
   browserPort?: number;
   browserHeadless?: boolean;
   browserHideWindow?: boolean;
+  browserWindowBounds?: BrowserWindowBounds;
+  browserKeepWindowBehind?: boolean;
   browserKeepBrowser?: boolean;
   browserModelStrategy?: BrowserModelStrategy;
   browserThinkingTime?: ThinkingTimeLevel;
@@ -161,6 +164,16 @@ export function applyBrowserDefaultsFromConfig(
   }
   if (!attachRunningRequested && isUnset("browserHideWindow") && browser.hideWindow !== undefined) {
     options.browserHideWindow = browser.hideWindow;
+  }
+  if (!attachRunningRequested && isUnset("browserWindowBounds") && browser.windowBounds) {
+    options.browserWindowBounds = browser.windowBounds;
+  }
+  if (
+    !attachRunningRequested &&
+    isUnset("browserKeepWindowBehind") &&
+    browser.keepWindowBehind !== undefined
+  ) {
+    options.browserKeepWindowBehind = browser.keepWindowBehind;
   }
   if (
     !attachRunningRequested &&

@@ -23,6 +23,7 @@ import type {
 import {
   launchChrome,
   registerTerminationHooks,
+  applyChromeWindowBounds,
   positionChromeWindowOffscreen,
   positionChromeWindowOnscreen,
   connectToRemoteChrome,
@@ -1271,6 +1272,9 @@ async function runBrowserModeInternal(
       // Persistent profiles can retain bounds from a prior hidden run. Visible
       // local runs must actively restore the Oracle-owned Chrome window.
       await positionChromeWindowOnscreen(client, userDataDir, logger);
+      if (config.windowBounds) {
+        await applyChromeWindowBounds(client, config.windowBounds, logger);
+      }
     }
     // The send button is clicked with trusted CDP input events at viewport
     // coordinates, which ChatGPT silently drops when the window is hidden or

@@ -191,6 +191,32 @@ describe("applyBrowserDefaultsFromConfig", () => {
     expect(options.browserKeepBrowser).toBe(true);
   });
 
+  test("places Oracle's own Chrome window but never an attach-running Chrome", async () => {
+    const windowBounds = { left: -1080, top: -487, windowState: "maximized" as const };
+    const options: BrowserDefaultsOptions = {};
+    applyBrowserDefaultsFromConfig(
+      options,
+      { browser: { windowBounds, keepWindowBehind: true } },
+      source,
+    );
+    const resolved = await buildBrowserConfig({
+      model: "gpt-5.6-sol",
+      browserWindowBounds: options.browserWindowBounds,
+      browserKeepWindowBehind: options.browserKeepWindowBehind,
+    });
+    expect(resolved.windowBounds).toEqual(windowBounds);
+    expect(resolved.keepWindowBehind).toBe(true);
+
+    const attached: BrowserDefaultsOptions = {};
+    applyBrowserDefaultsFromConfig(
+      attached,
+      { browser: { attachRunning: true, windowBounds, keepWindowBehind: true } },
+      source,
+    );
+    expect(attached.browserWindowBounds).toBeUndefined();
+    expect(attached.browserKeepWindowBehind).toBeUndefined();
+  });
+
   test("applies thinking time when CLI flag is untouched", () => {
     const options: BrowserDefaultsOptions = {};
     const config: UserConfig = {

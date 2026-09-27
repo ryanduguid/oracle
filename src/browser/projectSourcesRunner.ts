@@ -6,6 +6,7 @@ import {
   closeTab,
   connectWithNewTab,
   launchChrome,
+  applyChromeWindowBounds,
   positionChromeWindowOffscreen,
   positionChromeWindowOnscreen,
   registerTerminationHooks,
@@ -256,6 +257,9 @@ export async function runBrowserProjectSources(
       await positionChromeWindowOffscreen(client, userDataDir, logger);
     } else if (!config.headless) {
       await positionChromeWindowOnscreen(client, userDataDir, logger);
+      if (config.windowBounds) {
+        await applyChromeWindowBounds(client, config.windowBounds, logger);
+      }
     }
     removeDialogHandler = installJavaScriptDialogAutoDismissal(Page, logger);
     if (!manualLogin) {

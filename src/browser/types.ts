@@ -12,6 +12,7 @@ import type { ThinkingTimeLevel } from "../oracle/types.js";
 
 export type ChromeClient = Awaited<ReturnType<typeof CDP>>;
 export type CookieParam = Protocol.Network.CookieParam;
+export type BrowserWindowBounds = Protocol.Browser.Bounds;
 export type BrowserModelStrategy = "select" | "current" | "ignore";
 export type BrowserResearchMode = "off" | "search" | "deep";
 export type BrowserArchiveMode = "auto" | "always" | "never";
@@ -114,6 +115,10 @@ export interface BrowserAutomationConfig {
   headless?: boolean;
   keepBrowser?: boolean;
   hideWindow?: boolean;
+  /** Place Oracle's Chrome window with CDP bounds (e.g. maximised on a second monitor); ignored with hideWindow. */
+  windowBounds?: BrowserWindowBounds | null;
+  /** Windows: keep Oracle's Chrome behind the windows it overlaps unless the user focuses it. */
+  keepWindowBehind?: boolean;
   desiredModel?: string | null;
   modelIsImplicitDefault?: boolean;
   modelStrategy?: BrowserModelStrategy;

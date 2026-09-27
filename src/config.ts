@@ -4,6 +4,7 @@ import path from "node:path";
 import JSON5 from "json5";
 import { getOracleHomeDir } from "./oracleHome.js";
 import type {
+  BrowserWindowBounds,
   BrowserArchiveMode,
   BrowserModelStrategy,
   BrowserResearchMode,
@@ -60,6 +61,10 @@ export interface BrowserConfigDefaults {
   cookieSyncWaitMs?: number;
   headless?: boolean;
   hideWindow?: boolean;
+  /** Chrome window bounds for Oracle's own Chrome, as CDP Browser.Bounds; ignored with hideWindow. */
+  windowBounds?: BrowserWindowBounds;
+  /** Windows: keep Oracle's Chrome behind the windows it overlaps unless you focus it. */
+  keepWindowBehind?: boolean;
   keepBrowser?: boolean;
   modelStrategy?: BrowserModelStrategy;
   /** Thinking time intensity (ChatGPT Thinking/Pro models): 'light', 'standard', 'extended', 'heavy' */
