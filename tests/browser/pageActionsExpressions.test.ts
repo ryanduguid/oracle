@@ -12,6 +12,7 @@ import {
   CONVERSATION_TURN_CONTAINER_SELECTOR,
   CONVERSATION_TURN_SELECTOR,
   ASSISTANT_ROLE_SELECTOR,
+  COPY_BUTTON_SELECTOR,
 } from "../../src/browser/constants.ts";
 
 describe("browser automation expressions", () => {
@@ -143,7 +144,15 @@ describe("browser automation expressions", () => {
     expect(expression).toContain(JSON.stringify(CONVERSATION_TURN_SELECTOR));
     expect(expression).toContain(ASSISTANT_ROLE_SELECTOR);
     expect(expression).toContain("isAssistantTurn");
-    expect(expression).toContain("copy-turn-action-button");
+    expect(expression).toContain(COPY_BUTTON_SELECTOR);
+    // The newest assistant turn decides; an older turn's button would copy the wrong reply.
+    expect(expression).toContain("return turn.querySelector(BUTTON_SELECTOR);");
+  });
+
+  test("copy selector skips copy buttons inside message content", () => {
+    expect(COPY_BUTTON_SELECTOR).toContain(
+      '[data-turn-key] button[aria-label="Copy"]:not([data-content-search-unit-key] button)',
+    );
   });
 
   test("user-turn attachment expression requires non-empty prompt text for prefix fallback", () => {

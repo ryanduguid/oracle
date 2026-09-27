@@ -97,7 +97,10 @@ export const SEND_BUTTON_SELECTOR = SEND_BUTTON_SELECTORS[0];
 export const MODEL_BUTTON_SELECTOR =
   '[data-testid="model-switcher-dropdown-button"], button.__composer-pill[aria-haspopup="menu"], button[data-codex-intelligence-trigger="true"][aria-haspopup="menu"], button[aria-label="Select ChatGPT model"][aria-haspopup="menu"]';
 export const COMPOSER_MODEL_SIGNAL_SELECTOR = '[data-testid="composer-footer-actions"]';
-export const COPY_BUTTON_SELECTOR = 'button[data-testid="copy-turn-action-button"]';
+// September 2026 turns ([data-turn-key]) drop the test id: the reply's action-bar button is
+// labelled "Copy" and sits outside the message content, so a code block's copy button never matches.
+export const COPY_BUTTON_SELECTOR =
+  'button[data-testid="copy-turn-action-button"], [data-turn-key] button[aria-label="Copy"]:not([data-content-search-unit-key] button)';
 // Action buttons that only appear once a turn has finished rendering.
 export const DEEP_RESEARCH_PLUS_BUTTON = '[data-testid="composer-plus-btn"]';
 export const DEEP_RESEARCH_DROPDOWN_ITEM_TEXT = "Deep research";

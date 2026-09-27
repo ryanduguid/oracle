@@ -1624,10 +1624,9 @@ function buildCopyExpression(meta: { messageId?: string | null; turnId?: string 
       for (let i = turns.length - 1; i >= 0; i -= 1) {
         const turn = turns[i];
         if (!isAssistantTurn(turn)) continue;
-        const button = turn.querySelector(BUTTON_SELECTOR);
-        if (button) {
-          return button;
-        }
+        // Only the newest reply's button copies this answer. An older turn's would copy the wrong
+        // reply, so report it missing and let the caller retry or fall back to the page text.
+        return turn.querySelector(BUTTON_SELECTOR);
       }
       const all = Array.from(document.querySelectorAll(BUTTON_SELECTOR));
       for (let i = all.length - 1; i >= 0; i -= 1) {
