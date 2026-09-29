@@ -74,6 +74,17 @@ const evaluateAttachmentReady = (expectedName: string, visibleName: string): boo
 };
 
 describe("promptComposer", () => {
+  test("does not block when the conversation-list probe itself fails", async () => {
+    const runtime = {
+      evaluate: vi.fn().mockRejectedValue(new Error("probe failed")),
+    };
+    const logger = vi.fn();
+    await expect(
+      warnIfChatListRateLimited(runtime as never, logger as never),
+    ).resolves.toBeUndefined();
+    expect(logger).not.toHaveBeenCalled();
+  });
+
   test("warns without blocking when ChatGPT's conversation list is loading after HTTP 429", async () => {
     const runtime = {
       evaluate: vi.fn().mockResolvedValue({ result: { value: true } }),
